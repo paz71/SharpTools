@@ -7,6 +7,8 @@
 | **Tokenize / Detokenize** | Converts tokenized BASIC images (`.bin`) to readable text and back |
 | **Renumber** | Renumbers a BASIC listing and updates all jumps |
 | **Line ends / EOF** | Adds the end-of-file mark SUB (1A) and switches line ends between LF and CR LF |
+| **Tape files** | Takes the header and checksums off a `.tap` file (and checks them), or wraps an image into a tape file |
+| **Program info** | Number of lines, size in bytes, variables used, which line calls which, dead jumps |
 
 More tools can be added as plugins (see below). Python 3, no extra packages.
 
@@ -24,8 +26,10 @@ python3 sharptools.py
 | `sharp_tok.py` | Engine of the *Tokenize / Detokenize* tab |
 | `sharp_renum.py` | Engine of the *Renumber* tab |
 | `sharp_eol.py` | Engine of the *Line ends / EOF* tab |
+| `sharp_info.py` | Engine of the *Program info* tab |
+| `sharp_tap.py` | Engine of the *Tape files* tab |
 
-The three `sharp_*.py` scripts also work on their own from the command line (see the end of this page), but you do not need that to use SharpTools.
+The `sharp_*.py` scripts also work on their own from the command line (see the end of this page), but you do not need that to use SharpTools.
 
 ## Using SharpTools
 
@@ -33,7 +37,11 @@ The three `sharp_*.py` scripts also work on their own from the command line (see
 
 **Renumber.** Choose the BASIC listing, the first line number and the step, then press **Renumber**. The output is `NAME_renum.bas` unless you change it. All jumps (`GOTO`, `GOSUB`, `THEN`, `ELSE`, `ON x GOTO/GOSUB 10,20,30`, `ON ERROR GOTO`, `RESTORE`, `RUN`, `RESUME`, `LIST`, …) follow the new numbers. Fixed names such as `GOTO "INTRO"`, the label in front of a line (`10 "A" PRINT`), strings, `REM` / `'` comments, `DATA` lines, computed jumps and hex numbers are not touched. A jump to a line that does not exist is left as it is and reported.
 
-**Line ends / EOF.** Choose a text file. **Add SUB (1A) at end of file** and **Toggle LF ⇄ CR LF** change the file in memory and show the result in the log; nothing is written until you press **Save**, which asks for confirmation and then overwrites the file. **Reload** discards the changes.
+**Line ends / EOF.** Choose a text file. **Add SUB (1A) at end of file**, **Toggle LF ⇄ CR LF**, **All → LF** and **All → CR LF** change the file in memory and show the result in the log; nothing is written until you press **Save**, which asks for confirmation and then overwrites the file. **Reload** discards the changes. A file with CR LF (also a mixed one) can be switched to LF with *Toggle* or *All → LF*.
+
+**Tape files.** A `.tap` file is a tape recording: a 10-byte header, the program with a checksum byte after every block of 120 bytes, and an end mark. Choose *Strip*, pick the tape file and press **Run** to get the bare image (`NAME.bin`, or `NAME_img.bin` if the tape file is itself called `.bin`) that the *Tokenize / Detokenize* tab reads. The checksums are verified and wrong blocks are reported. *Check only* shows the header, the number of blocks and the result of the check without writing anything. *Wrap* does the reverse for a bare image and writes `NAME.tap`. Reading and checking works for the PC-1260 … PC-1475 and PC-1280/1360/1470/1475 tape layout (ID 70 … 73, verified on real files) and the PC-125x layout (ID 20, 21, 80); wrapping is only available for the first one, with the header `70 00 00 00 00 00 00 00 5F 14` taken from real files (on the command line `--header-from other.tap` copies the header of another tape file).
+
+**Program info.** Choose a BASIC listing (`.bas`) or a tokenized image (`.bin`) and press **Analyze**. The log shows the number of lines, the size of the tokenized image in bytes (what the program needs in the pocket's memory, plus a little overhead), the variables used (numbers, strings, arrays), **dead jumps** (a `GOTO`/`GOSUB`/`THEN` to a line that does not exist, or to a label that is not defined), **lines nothing jumps to** (the first line and lines with a label such as `10 "A"` are entry points and left out; lines that follow a `GOTO`/`END`/`STOP`/`RETURN` and are never jumped to are marked as probably never run), and two lists: which line calls which, and each jump target with its callers. *Brief* leaves the long lists out. The model decides the image size; for a listing it is `PC-1403` unless you choose another, for a `.bin` image it is detected. Text in strings, `REM` / `'` comments and `DATA` lines are not analysed, computed jumps (`GOTO A*10`) are listed but not checked.
 
 **Default folders.** The *Settings* menu sets a default input folder (where the Browse dialogs for input files start) and a default output folder (where output names are suggested and the Browse dialogs for output files start). Without a default output folder the output Browse dialogs start in the default input folder, and a suggested output name stays next to its input file. *Show default folders* and *Clear default folders* are in the same menu. The folders are remembered in `.sharptools.json` in your home folder.
 
@@ -58,7 +66,7 @@ PC-E500S / G850VS keywords (`WHILE`, `WEND`, `SWITCH`, `CASE`, `DEFAULT`, `ENDSW
 
 ## Good to know
 
-- **Use bare images, not `.tap` files.** A `.tap` file is a tape recording with a header and checksum bytes. Read as an image it looks damaged (wrong length warnings, odd characters in `POKE` lines). Even a file named `.bin` can be a tap file; in the PC-1403 family it starts with `70`, a bare image starts with a line number such as `00 0A`. Convert first with Pocket Tools: `wav2bin --tap file.tap --type=img`.
+- **Use bare images, not `.tap` files.** A `.tap` file is a tape recording with a header and checksum bytes. Read as an image it looks damaged (wrong length warnings, odd characters in `POKE` lines). Even a file named `.bin` can be a tap file; in the PC-1403 family it starts with `70`, a bare image starts with a line number such as `00 0A`. Convert first with the *Tape files* tab (*Strip*) or with Pocket Tools: `wav2bin --tap file.tap --type=img`.
 - A PC-1500 image that contains PC-1600 codes (line targets stored as `1F hi lo 00`, `LINE` as `F0 99`) is decoded with the PC-1600 table, with a note in the log. Use `PC-1600` when tokenizing such programs.
 - PC-125x models have one code per letter, so their listings are uppercase.
 - If automatic detection guesses wrong on a damaged file, choose the model by hand. PC-1360, PC-E and PC-G share codes: choose `PC-E500` or `PC-G850` for machine-specific keywords.
@@ -74,28 +82,20 @@ python3 sharp_tok.py det [--model M] input.bin [output.bas]     # image -> text 
 python3 sharp_tok.py tok [--model M] input.bas [output.bin]     # text -> image (default model PC-1403)
 python3 sharp_renum.py input.bas [output.bas] [--start 10] [--step 10]
 python3 sharp_eol.py sub    input [output] [--inplace]          # add SUB (1A) at the end
-python3 sharp_eol.py toggle input [output] [--inplace]          # LF -> CR LF, CR LF -> LF
+python3 sharp_eol.py toggle input [output] [--inplace]          # any CR -> LF, otherwise LF -> CR LF
+python3 sharp_eol.py lf     input [output] [--inplace]          # all line ends LF
+python3 sharp_eol.py crlf   input [output] [--inplace]          # all line ends CR LF
 python3 sharp_eol.py info   input                               # show line ends and SUB
+python3 sharp_tap.py info|strip|wrap input [output]                # tape files (.tap)
+python3 sharp_info.py input.bas [--model PC-1403] [--brief]     # program info (also input.bin)
 ```
 
-- Without an output file `sharp_tok.py` writes next to the input with the other extension (`banana.bas` ⇄ `banana.bin`), `sharp_renum.py` writes `NAME_renum.bas`, and `sharp_eol.py` writes `NAME_sub.ext`, `NAME_crlf.ext` or `NAME_lf.ext` (`--inplace` changes the input itself). `_out` is added if a name would equal the input, so the input is never overwritten by accident. Use `-` as output to print the result.
+- Without an output file `sharp_tok.py` writes next to the input with the other extension (`banana.bas` ⇄ `banana.bin`), `sharp_renum.py` writes `NAME_renum.bas`, and `sharp_eol.py` writes `NAME_sub.ext`, `NAME_lf.ext` or `NAME_crlf.ext` (`--inplace` changes the input itself). `_out` is added if a name would equal the input, so the input is never overwritten by accident. Use `-` as output to print the result.
 - `sharp_tok.py`: `--model` is the only option. Example: `10 PRINT "HI"` and `20 GOTO 10` become `00 0A 06 DE 22 48 49 22 0D 00 14 04 C6 31 30 0D FF` for a PC-1403.
-- `sharp_eol.py toggle`: CR LF becomes LF, anything else becomes CR LF (mixed or CR-only line ends are all replaced); binary files (with `00` bytes) are refused. `sub` does nothing if the file already ends with SUB.
+- `sharp_eol.py toggle`: a file with CR LF (or any CR, also mixed line ends) becomes LF, a file with LF only becomes CR LF. `lf` and `crlf` set the line ends explicitly. Binary files (with `00` bytes) are refused. `sub` does nothing if the file already ends with SUB.
 
 ## Credits and license
 
 Tables and character codes follow **Pocket Tools** (`bas2img`, `wav2bin`) and the Sharp manuals. The PC-1500/1600 tables derive from **SharpDataExchange** by Martin Erzberger (Polyform Noncommercial 1.0.0), so this project is for **noncommercial use only**.
 
-## Changes since v0.3
 
-- **SharpTools** (`sharptools.py`): the GUI is now one window with a tab per tool and a plugin interface for more tools. It has a *Settings* menu with a default input folder and a default output folder (the output folder falls back to the input folder).
-- New tool *Renumber* (`sharp_renum.py`): first line number and step, all jump targets updated, quoted labels left alone.
-- New tool *Line ends / EOF* (`sharp_eol.py`): add SUB (1A) at the end of a file and toggle LF / CR LF; changes are made in memory and written with a **Save** button after a confirmation.
-- Renamed: `sharp_basic_v2.py` is now `sharp_tok.py`, `sharp_basic_gui.py` is now `sharptools.py`.
-
-## Changes in v0.3
-
-- The output file is optional for tokenizing and detokenizing (same name and folder as the input, other extension). `_out` is added if the name would equal the input. Detokenizing no longer prints the listing without an output file; use `-` as output to print it.
-- PC-1500 images with PC-1600 codes (`1F` line targets, `LINE` = `F0 99`) are detected and decoded with the PC-1600 table instead of showing `<1F>` and `<F0><99>`.
-- Model names in `--help` and in the GUI use the `PC-1211`, `PC-1251`, `PC-1360` style.
-- GUI: the output name follows the input name, can be left empty, and is no longer required for tokenizing.
