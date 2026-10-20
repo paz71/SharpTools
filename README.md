@@ -64,15 +64,6 @@ The `sharp_*.py` scripts also work on their own from the command line (see the e
 
 PC-E500S / G850VS keywords (`WHILE`, `WEND`, `SWITCH`, `CASE`, `DEFAULT`, `ENDSWITCH`, `ENDIF`, `REPEAT`, `UNTIL`, `ELSE`) are included. Special characters (katakana, card suits, Π, √ and so on) are written as Unicode and read back to the same bytes. Damaged files do not stop detokenizing: problems are reported and the rest is still decoded.
 
-## Good to know
-
-- **Use bare images, not `.tap` files.** A `.tap` file is a tape recording with a header and checksum bytes. Read as an image it looks damaged (wrong length warnings, odd characters in `POKE` lines). Even a file named `.bin` can be a tap file; in the PC-1403 family it starts with `70`, a bare image starts with a line number such as `00 0A`. Convert first with the *Tape files* tab (*Strip*) or with Pocket Tools: `wav2bin --tap file.tap --type=img`.
-- A PC-1500 image that contains PC-1600 codes (line targets stored as `1F hi lo 00`, `LINE` as `F0 99`) is decoded with the PC-1600 table, with a note in the log. Use `PC-1600` when tokenizing such programs.
-- PC-125x models have one code per letter, so their listings are uppercase.
-- If automatic detection guesses wrong on a damaged file, choose the model by hand. PC-1360, PC-E and PC-G share codes: choose `PC-E500` or `PC-G850` for machine-specific keywords.
-- On a PC-E500, after loading a tokenized image enter `TEXT` and then `BASIC`.
-- The highest line number is 65279 (PC-125x and PC-1210/1211/1212: 999, you get a note).
-
 ## Command line (optional)
 
 The engines can be used without the GUI. The model name is written as `PC-1251` (the `PC-` prefix and the case are optional). The output file is optional everywhere.
