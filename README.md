@@ -171,7 +171,7 @@ the CLOAD M tape header (ID 76 confirmed) remain outside this verification.
 
 #### Not supported yet (error with the line number)
 `CHAIN`, `MEM`, real printer output for `LPRINT`, the commas/columns of `PRINT`, and all tape/printer/program-editing commands (`CLOAD CSAVE LIST RUN NEW …`, which cannot exist in a compiled program).
-All planned stages are done. Not planned: `CHAIN`, `MEM`, printer output and tape commands.
+All planned stages are done. Not planned: `CHAIN`, `MEM`, printer output and tape commands. String commands like STR$, LEFT$, RIGHT$ and MID$.
 
 ### Accuracy of the math functions (real mode)
 Written in the same BASIC dialect and compiled into the program when used. Measured against Python's `math` over random arguments: relative error ≤ 5·10⁻¹⁰ for `SQR EXP LN LOG SIN COS TAN ATN ASN ACS TEN HSN HCS HTN`, ≤ 2·10⁻⁹ for `AHS AHT FACT` (`FACT 69` accumulates rounding), i.e. the last one or two of the ten digits can differ from a real PC-1403. Exact cases come out exact (`SIN 30`, `COS 60`, `TAN 45`, `ATN 1`, `ASN 1`, `LOG 1000`, `2^10`, `FACT 10`). `FACT` needs 0…69; `TEN`/`EXP` overflow above ≈230.26 / 100.
