@@ -12,9 +12,17 @@
 | **Convert model** | Converts the display POKEs and the CALL that activates the display of a program from one pocket computer to another (PC-1401/02, PC-140x/1460, PC-1475, PC-125x, PC-126x); lists source and target statements |
 | **Minify / Tidy** | Removes comments and unneeded spaces to save memory, or formats a listing so it is easier to read |
 | **Program info** | Number of lines, size in bytes, variables used, which line calls which, dead jumps |
-| **pc-1403 -> ML** | Compiles a PC-1403 / PC-1403H BASIC program to machine code (binary with and without header, BASIC loaders); plugin, see below |
+| **pc-1403 -> ML** | Compiles a PC-1403 / PC-1403H BASIC program to machine code (raw binary + start-address file for Pocket Tools, BASIC loaders); plugin, see below |
 
 More tools can be added as plugins (see below); the compiler *pc-1403 -> ML* is one of them. Python 3, no extra packages.
+
+## Changes since 0.7.0 (0.7.1)
+- STR$, LEFT$, RIGHT$, MID$, VAL, Strings implemented
+- LPRINT does correct communication with ce-126p
+- Resolved Header issue and adapted correctly to bin2wav from PocketTools
+  Now it should be possible to use CLOAD M "FILE" without any address
+- Binary shrinked in mixed mode
+- some commands like CHAIN, MEM are not implemented
 
 ## Start
 
@@ -87,40 +95,26 @@ Files: `sharp_b2ml.py` (compiler + built-in SC61860 assembler, Python 3, standar
 
     python3 sharp_b2ml.py prog.bas [-o NAME] [--org 0xF560] [--data 0xFA00] [--chunk 1024] 
 
-Writes `NAMENoHdr.bin` (code only, no header), `NAMEXXXX.bin` (16-byte header + code; XXXX = start address in hex, e.g. `hanoiE6F0.bin`) and `NAME_load1.bas …` (BASIC loaders). `--asm` also writes `NAME.asm` (generated listing incl. runtime).
+Writes `NAME.bin` (code only, no header), `NAME.ADR` (its start address, e.g. `0xF6F0`) and `NAME_load1.bas …` (BASIC loaders). `--asm` also writes `NAME.asm` (generated listing incl. runtime).
 On the PC-1403: RUN loader 1, `NEW`, RUN loader 2 …, `NEW`, then `CALL <address>` (printed by the last loader).
 For a PC-1403H use `--chunk 0` (a single loader). Loaders show a percent value after every two DATA lines.
 
-### Binary files with and without header
-- `NAMENoHdr.bin`: the machine code only (what the loaders poke into memory).
-- `NAMEXXXX.bin`: a 16-byte header followed by the machine code. The `.tap` files are no longer written.
-
-Header (ID 0x76, CSAVE M / CLOAD M of the PC-1403):
-
-| Offset | Size | Content |
-|---|---|---|
-| 0x00 | 1 | file type `76` |
-| 0x01–0x07 | 7 | name (max. 7 upper-case characters) in reverse order, padded with `00` |
-| 0x08 | 1 | `00` |
-| 0x09–0x0A | 2 | start address, big endian (high byte first) |
-| 0x0B–0x0C | 2 | length − 1, big endian |
-| 0x0D–0x0E | 2 | `00 00` |
-| 0x0F | 1 | sum of the 30 nibbles of bytes 0x00–0x0E, modulo 256 |
-
-Example (512 bytes named TEST at &8500): `76 54 53 45 54 00 00 00 00 85 00 01 FF 00 00 5C` (this example is reproduced exactly by the compiler's header routine).
-The header layout follows the description supplied by the user; it was checked against that example, not on the calculator.
-Earlier versions' tape files (ID 76, loaded with CLOAD M on a PC-1403) are replaced by these files.
+### Binary file and tape (Pocket Tools)
+- `NAME.bin`: the machine code only, no header. `NAME.ADR`: its start address.
+- Pocket Tools `MC2Wav NAME` (bin2wav `--type=bin`) takes the raw `.bin`, writes the tape header itself and reads the start address from `NAME.ADR`. Put both files in the Pocket Tools binary folder. Never feed it a file that already contains a header: bin2wav would treat the header as program bytes and load everything at its default address (this was the cause of the earlier failed loads and resets).
+- Load on the calculator with `CLOAD M "NAME"`, on a plain PC-1403 `CLOAD M "NAME";&F6F0` (use the address from the `.ADR` file), then `CALL &F6F0`.
+- Use the file name length of at most 7 characters.
 
 ### Number modes
 `--mode auto` (default) compiles with 16-bit signed integers (2 bytes per variable, in the data page; `AND OR` bitwise, overflow wraps).
 When the program needs real numbers (decimal numbers, `/`, `^`, `SQR SIN COS TAN ASN ACS ATN LOG LN EXP DEG DMS FACT HSN HCS HTN AHS AHC AHT TEN PI`,
-`STR$`, `VAL`, `USING`) it switches to **mixed mode**: only the variables, arrays and expressions that need real numbers use real
+`VAL`, `USING`, `STR$` of a real value) it switches to **mixed mode**: only the variables, arrays and expressions that need real numbers use real
 numbers (10-digit BCD, 8 bytes, in the heap); everything else stays integer. `--mode int` forces integers only (`/` truncates,
 real features give an error), `--mode real` makes everything real (largest), `--mode mixed` forces mixed mode.
 
 How the compiler decides (per variable, over the whole program):
 - a variable or array is **real** as soon as a real value is assigned to it anywhere. Real values are: decimal numbers (a number typed with a
-  decimal point or exponent, even `1.0` or `1E3`, is real - use `F=1.0` to make `F` real on purpose), numbers outside -32768..32767, `/`, `^`,
+  decimal point or exponent, even `1.0` or `1E3`, is real - use `F=1.0` to make `F` real on purpose), numbers above 65535 (32768..65535 stay 16-bit so that addresses such as `CALL 63504` work in integer mode), `/`, `^`,
   the math functions, real variables, `INT()` of a real value, `VAL()`, and arithmetic (`+ - *`, `ABS`, `SQU`, negation) with a real operand;
 - a `FOR` variable is real if its start, limit or step is real, or the step is not a constant; `READ` targets are real if any `DATA` item is a decimal;
   `INPUT` into an integer variable accepts whole numbers only (make the variable real to accept decimals);
@@ -134,11 +128,13 @@ Example: a program with a loop in whole numbers and one `SQR`: integer part abou
 program in `--mode real` has every variable and operation real.
 
 ### Size reduction
-The generated assembler is optimised before it is assembled; every step is switched by a bit of `B2ML_OPT` (default 63):
+The generated assembler is optimised before it is assembled; every step is switched by a bit of `B2ML_OPT` (default 1023):
 1 unused runtime routines are left out, 2 repeated address loads become 3-byte calls of shared stubs, 4 repeated runs of
 simple instructions become subroutines (nesting limited, never print/ROM calls), 8 multi-letter variables use the free
 letter slots of the data page, 16 string temporaries are allocated only when used (one character = 2 bytes),
-32 constants below 256 are loaded with a 5-byte form.
+32 constants below 256 are loaded with a 5-byte form, 64 jumps within reach become 2-byte relative jumps (`JRNZ/JP` pairs one `JRZ`),
+128 real variables and constants are addressed by a 1-byte offset (shared routines per 256-byte window) instead of two 4-byte register loads,
+256 repeated instruction runs of the runtime library are outlined too, 512 identical routine endings are kept once (cross jumping). Mixed mode shrank by about 7% on average (math-heavy programs 13%).
 The compiler also computes the worst-case depth of the CPU call stack (14 bytes are guaranteed free, ROM routines
 included) and falls back to less aggressive optimisation if it would be exceeded.
 Example (Hanoi, 55 lines): unoptimised integer mode 8,376 bytes code + 610 bytes heap, now **4,623 + 252**
@@ -155,23 +151,24 @@ the CLOAD M tape header (ID 76 confirmed) remain outside this verification.
 
 ### Language
 * variables A–Z and two-character names (`AB`, `X1`); hex constants `&1F`; `+ - * / ^`, `= <> < > <= >=`, `AND OR`, unary minus, brackets
-* functions with or without brackets: `PEEK ABS INT SGN SQU RND NOT` (`INT` truncates, as in the manual; `RND n` gives 1..n)
+* functions with or without brackets: `PEEK ABS INT SGN SQU RND NOT` (`INT` truncates, as in the manual; `STR$ N` and `CHR$ N` may be written without brackets; `RND n` gives 1..n)
 * real mode: `SQR EXP LN LOG TEN SIN COS TAN ASN ACS ATN DEG DMS FACT HSN HCS HTN AHS AHC AHT PI`; `DEGREE RADIAN GRAD` select the angle unit (default DEGREE; kept in the data page, not changed by `CLEAR`). `SIN(X)^2` means `(SIN X)^2`
-* strings: `A$`…`Z$` hold 7 characters (longer values are cut, as on the PC-1403), `DIM N$(n)*m` makes an array of strings of m characters (default 16, m ≤ 80, one subscript, range checked); `+` joins (result ≤ 80 characters, else status 11), `= <> < > <= >=` compare, `LEFT$ RIGHT$ MID$(s,i[,n]) CHR$ LEN ASC`, `STR$ VAL` (these two make the program real mode), string constants in `DATA`/`READ`, `PRINT` of any string expression. Strings are length byte + characters in the heap; expressions use 4 temporary buffers of 80 characters (nesting deeper than 4 is an error). String functions are BASIC library routines like the math functions: about 2.6 KB for a small integer-mode string program
+* strings: `A$`…`Z$` hold 7 characters (longer values are cut, as on the PC-1403), `DIM N$(n)*m` makes an array of strings of m characters (default 16, m ≤ 80, one subscript, range checked); `+` joins (result ≤ 80 characters, else status 11), `= <> < > <= >=` compare, `LEFT$ RIGHT$ MID$(s,i[,n]) CHR$ LEN ASC`, `STR$ VAL` (`STR$` of a whole number needs no real mode: about 700 bytes instead of 3.4 KB; `STR$` of a real value and `VAL` make the program mixed mode), string constants in `DATA`/`READ`, `PRINT` of any string expression. Strings are length byte + characters in the heap; expressions use 4 temporary buffers of 80 characters (nesting deeper than 4 is an error). String functions are BASIC library routines like the math functions: about 2.6 KB for a small integer-mode string program
 * arrays `DIM X(n)`, `DIM X(r,c)` (constant sizes 0–255, from 0, range checked); `A(1)`…`A(26)` are A…Z; `CLEAR` zeroes all variables
 * keyboard: `INPUT ["prompt";|"prompt",] var[, …]` (as in the manual: `?` when there is no prompt, `;` keeps the prompt next to the typed text, `,` clears it at the first key, further variables are prompted with `?`, empty ENTER keeps the old value; keys ENTER, ←/DEL as backspace, SHIFT and SML work as on the machine; BRK ends the program), `INKEY$` (returns "" for ENTER, SHIFT, arrows…). Key codes come from the ROM key scan routine `0E68`, the character tables are the ROM's own (copied into the program, 258 bytes)
 * `USING "mask"` / `USING` / `PRINT USING "mask"; items`: `#` digits (sign included), `.`, `^` scientific, `&` string field, mixed masks, extra digits truncated, overflow = status 7 (the program is then real mode)
 * `AREAD v` is accepted and does nothing (warning): a compiled program has no start value
 * `[LET] v=expr`, `IF expr THEN line | statements`, `GOTO`, `GOSUB`, `RETURN`, `ON expr GOTO/GOSUB n1,n2,…`, `END`/`STOP`
 * `FOR v=a TO b [STEP s]` / `NEXT [v]` (real mode: any step expression; the body runs at least once)
-* `DATA`, `READ`, `RESTORE [line]`, `POKE addr,v1[,v2…]`, `PEEK`, `CALL address` (your own machine code; keep internal RAM 28–37 and the data page free)
+* `DATA`, `READ`, `RESTORE [line | "label" | string expression]`, `POKE addr,v1[,v2…]`, `PEEK`, `CALL address` (your own machine code; keep internal RAM 28–37 and the data page free)
 * `PRINT` / `PAUSE` with `"text"`, numbers, `CHR$(n)`, `;`; `WAIT n` shows PRINT output for n·1/59 s instead of waiting for a key
-* Labels (`10 "A": CLEAR`, `20 "B" PRINT ...`, or a label alone on a line) are omitted: they only name the DEF key start of the BASIC program, a compiled program has a single entry point. `GOTO "A"` / `GOSUB "A"` with a label are not supported.
-* `TRON TROFF RANDOM` do nothing, `BEEP n` sounds n beeps (buzzer bit of port C, switched exactly like the ROM does; `BEEP n,f,d` uses only n; `BEEP ON/OFF` unsupported), `LPRINT` is compiled as `PRINT` (display, with a warning), `REM`, `'`, several statements per line with `:`
+* Labels (`10 "A": CLEAR`, `20 "B" PRINT ...`, `470 "1": DATA ...`, or a label alone on a line) are not part of the program text: they name the line for the DEF key, a compiled program has a single entry point. They are used by `RESTORE "1"` and `RESTORE STR$ N` (the DATA of the line with that label; with a string expression the label is looked up at run time). `GOTO "A"` / `GOSUB "A"` with a label are not supported.
+* `LPRINT` (same items as `PRINT`) prints the line (24 characters, longer text is cut) on a CE-126P with the ROM's own printer routine, which the program calls through the ROM's bank-switch routine (`LIJ &78`, `CALL &1D5E`: bank 9, entry `JP 4C63`). The routine does the device selection, the handshake and the character conversion (letter O is sent as the round zero, digit 0 as the slashed zero) and ends the line with CR. Without a printer (or on a printer error) nothing is printed and the program goes on. Tested on a real PC-1403H with a CE-126P (text, numbers and loops print correctly); without a printer nothing is printed. `LPRINT` of a PC-1403 BASIC program longer than one line is not wrapped.
+* `TRON TROFF RANDOM` do nothing, `BEEP n` sounds n beeps (buzzer bit of port C, switched exactly like the ROM does; `BEEP n,f,d` uses only n; `BEEP ON/OFF` unsupported), `LPRINT` prints on the CE-126P printer (see below), `REM`, `'`, several statements per line with `:`
 
 #### Not supported yet (error with the line number)
-`CHAIN`, `MEM`, real printer output for `LPRINT`, the commas/columns of `PRINT`, and all tape/printer/program-editing commands (`CLOAD CSAVE LIST RUN NEW …`, which cannot exist in a compiled program).
-All planned stages are done. Not planned: `CHAIN`, `MEM`, printer output and tape commands. String commands like STR$, LEFT$, RIGHT$ and MID$.
+`CHAIN`, `MEM`, the commas/columns of `PRINT`, and all tape/printer/program-editing commands (`CLOAD CSAVE LIST RUN NEW …`, which cannot exist in a compiled program).
+All planned stages are done. Not planned: `CHAIN`, `MEM` and tape commands.
 
 ### Accuracy of the math functions (real mode)
 Written in the same BASIC dialect and compiled into the program when used. Measured against Python's `math` over random arguments: relative error ≤ 5·10⁻¹⁰ for `SQR EXP LN LOG SIN COS TAN ATN ASN ACS TEN HSN HCS HTN`, ≤ 2·10⁻⁹ for `AHS AHT FACT` (`FACT 69` accumulates rounding), i.e. the last one or two of the ten digits can differ from a real PC-1403. Exact cases come out exact (`SIN 30`, `COS 60`, `TAN 45`, `ATN 1`, `ASN 1`, `LOG 1000`, `2^10`, `FACT 10`). `FACT` needs 0…69; `TEN`/`EXP` overflow above ≈230.26 / 100.
