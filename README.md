@@ -12,7 +12,7 @@
 | **Convert model** | Converts the display POKEs and the CALL that activates the display of a program from one pocket computer to another (PC-1401/02, PC-140x/1460, PC-1475, PC-125x, PC-126x); lists source and target statements |
 | **Minify / Tidy** | Removes comments and unneeded spaces to save memory, or formats a listing so it is easier to read |
 | **Program info** | Number of lines, size in bytes, variables used, which line calls which, dead jumps |
-| **pc-1403 -> ML** | Compiles a PC-1403 / PC-1403H BASIC program to machine code (raw binary + start-address file for Pocket Tools, BASIC loaders); plugin, see below |
+| **pc-1403 -> ML** | Compiles a PC-1403 / PC-1403H BASIC program to machine code (raw binary + start-address file for Pocket Tools, BASIC loaders) |
 
 More tools can be added as plugins (see below); the compiler *pc-1403 -> ML* is one of them. Python 3, no extra packages.
 
