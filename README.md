@@ -16,13 +16,9 @@
 
 More tools can be added as plugins (see below); the compiler *pc-1403 -> ML* is one of them. Python 3, no extra packages.
 
-## Changes since 0.7.0 (0.7.1)
-- STR$, LEFT$, RIGHT$, MID$, VAL, Strings implemented
-- LPRINT does correct communication with ce-126p
-- Resolved Header issue and adapted correctly to bin2wav from PocketTools
-  Now it should be possible to use CLOAD M "FILE" without any address
-- Binary shrinked in mixed mode
-- some commands like CHAIN, MEM are not implemented
+## Changes in 0.7.2
+- Target model option (PC-1403 / PC-1403H) in the compiler (`--model`) and in the *pc-1403 -> ML* tab
+- Mixed mode: real constants stored compactly (about 1% smaller)
 
 ## Start
 
@@ -90,6 +86,8 @@ The `sharp_*.py` scripts also work on their own from the command line (see the e
 
 The tab **pc-1403 -> ML** compiles a PC-1403 / PC-1403H BASIC listing (`.bas`) to SC61860 machine code. It is a plugin.
 
+**Target model.** The tab (and `--model 1403|1403H` on the command line) has a *Target model* setting. **PC-1403** (default): 8 KB RAM, machine code may use only `&E030` up to the data page (6608 bytes with the default `&FA00`); a program that does not fit is refused with the number of bytes that are too many, and a warning appears when little room is left for the BASIC loader. **PC-1403H**: 32 KB RAM, code may go down to `&8030`. The model also sets the loader size (PC-1403: several parts of 1024 bytes, PC-1403H: one loader; *Bytes per loader* overrides it) and the `--pc=` value for MC2Wav / bin2wav that is printed after compiling (`1403` or `1404`, which is how bin2wav names the PC-1403H). The limits are the start addresses bin2wav uses for these models.
+
 Files: `sharp_b2ml.py` (compiler + built-in SC61860 assembler, Python 3, standard library only) and
 `sharptools_b2ml.py` (the tab "pc-1403 -> ML"). Put both next to `sharptools.py`; `sharp_tok.py` is needed only to read tokenized `.bin` files.
 
@@ -128,13 +126,13 @@ Example: a program with a loop in whole numbers and one `SQR`: integer part abou
 program in `--mode real` has every variable and operation real.
 
 ### Size reduction
-The generated assembler is optimised before it is assembled; every step is switched by a bit of `B2ML_OPT` (default 1023):
+The generated assembler is optimised before it is assembled; every step is switched by a bit of `B2ML_OPT` (default 3071):
 1 unused runtime routines are left out, 2 repeated address loads become 3-byte calls of shared stubs, 4 repeated runs of
 simple instructions become subroutines (nesting limited, never print/ROM calls), 8 multi-letter variables use the free
 letter slots of the data page, 16 string temporaries are allocated only when used (one character = 2 bytes),
 32 constants below 256 are loaded with a 5-byte form, 64 jumps within reach become 2-byte relative jumps (`JRNZ/JP` pairs one `JRZ`),
 128 real variables and constants are addressed by a 1-byte offset (shared routines per 256-byte window) instead of two 4-byte register loads,
-256 repeated instruction runs of the runtime library are outlined too, 512 identical routine endings are kept once (cross jumping). Mixed mode shrank by about 7% on average (math-heavy programs 13%).
+256 repeated instruction runs of the runtime library are outlined too, 512 identical routine endings are kept once (cross jumping), 2048 real constants with 5 trailing zero bytes are stored in 3 bytes. Mixed mode shrank by about 7% on average (math-heavy programs 13%).
 The compiler also computes the worst-case depth of the CPU call stack (14 bytes are guaranteed free, ROM routines
 included) and falls back to less aggressive optimisation if it would be exceeded.
 Example (Hanoi, 55 lines): unoptimised integer mode 8,376 bytes code + 610 bytes heap, now **4,623 + 252**
